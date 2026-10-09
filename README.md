@@ -1,168 +1,77 @@
-# SAT Solver
+# Verified SAT Solver in Coq
 
-The code for the project lies in [plf/SatSolver.v](plf/SatSolver.v)
+A brute-force Boolean satisfiability (SAT) solver written in Coq, with machine-checked proofs of its soundness, plus a verified formula optimizer and a verified negation normal form (NNF) converter.
 
-Report of the project is available [here](report.pdf). 
+- **Source:** [plf/SatSolver.v](plf/SatSolver.v)
+- **Report:** [Report.pdf](Report.pdf)
+- **Assignment:** [Project description.md](Project%20description.md)
 
-## Description
+The `lf/` and `plf/` directories hold the *Software Foundations* volumes (*Logical Foundations* and *Programming Language Foundations*) used during the course. `SatSolver.v` is self-contained and depends only on the Coq standard library.
 
-The goal of this project is to implement a Boolean Satisfiability (SAT) solver in Coq and to prove the soundness of your implementation.
+## Building
 
-Boolean formulas are given by the following grammar:
+Requires Coq (tested with Coq/Rocq 9.x; earlier 8.x versions should also work).
 
+```sh
+cd plf
+coqc SatSolver.v
 ```
-p, q ::= x | ⊤ | ⊥ | p ∧ q | p ∨ q | p → q | ¬p
-```
 
-Here, `x` ranges over an infinite set of propositional variables. Examples of formulas are:
+If compilation succeeds, every proof has been checked. Coq 9 prints `"From Coq" has been replaced by "From Stdlib"` deprecation warnings, which you can ignore.
 
-- `(x ∨ ¬y) ∧ (¬x ∨ y)`
-- `¬y → (x ∨ y)`
-- `x ∧ ¬x ∧ ⊤`
+## What's inside
 
-A Boolean formula `p` is said to be *satisfiable* in case its truth table contains at least one row whose outcome is 1. For example, the formula `¬y → (x ∨ y)` has the truth table
-
-| x | y | ¬y → (x ∨ y) |
-|---|---|--------------|
-| f | f | f |
-| t | f | t |
-| f | t | t |
-| t | t | t |
-
-and thus is satisfiable. The formula `x ∧ ¬x ∧ ⊤` has the truth table
-
-| x | x ∧ ¬x ∧ ⊤ |
-|---|------------|
-| f | f |
-| t | f |
-
-and hence is not satisfiable.
-
-## Exercises
-
-Complete all the exercises below.
-
-The first part of this project is to represent Boolean formulas in Coq and to formally define the notion of satisfiability.
-
-### Exercise 1
+### Formulas and semantics
 
 ```coq
 Inductive form :=
-| FVar : string -> form
-(* fill in *) .
+  | FVar  : string -> form
+  | FTrue | FFalse
+  | FAnd  : form -> form -> form
+  | FOr   : form -> form -> form
+  | FImp  : form -> form -> form
+  | FNot  : form -> form.
 ```
 
-### Exercise 2
+A custom notation lets you write formulas directly, e.g. `<{ (x \/ ~y) /\ (~x \/ y) }>`.
 
-Give Coq definitions of type `form` corresponding to:
+| Definition | Kind | Meaning |
+|---|---|---|
+| `valid V p` | `Prop` | `p` holds under valuation `V` (truth-table semantics) |
+| `satisfiable p` | `Prop` | `exists V, valid V p` |
+| `eval_form V p` | `bool` | Computable evaluation of `p` under `V` |
 
-- `(x ∨ ¬y) ∧ (¬x ∨ y)`
-- `¬y → (x ∨ y)`
-- `x ∧ ¬x ∧ ⊤`
+### Solver
 
-In order to define satisfiability we introduce the notion of a *valuation*, which is a function that assigns true or false to each propositional variable.
+`find_valuation` works in three steps:
 
-```coq
-Definition valuation := string -> bool.
-```
+1. Collect the distinct variables of `p` (`find_vars`).
+2. Generate all 2ⁿ Boolean assignments (`gen_bool_perms`) and turn each into a valuation (`gen_valuations`).
+3. Return the first valuation that makes `eval_form` true, or `None` if there isn't one.
 
-### Exercise 3
+`solver p` returns `true` exactly when `find_valuation p` finds a valuation.
 
-Define validity of Boolean formulas (using the "truth table semantics") via a recursive `Prop`-valued function:
+### Main results
 
-```coq
-Fixpoint valid (V : valuation) (p : form) : Prop :=
-(* fill in *) .
-```
+| Theorem | Statement |
+|---|---|
+| `eval_form_valid` | `eval_form V p = true <-> valid V p` |
+| `solver_sound` | `solver p = true -> satisfiable p` |
+| `optimizer_eval_form` | `eval_form V p = eval_form V (optimizer p)` |
+| `optimizer_satisfiable` | `satisfiable p <-> satisfiable (optimizer p)` |
+| `nnf_converter_eval_form` | `eval_form V p = eval_form V (nnf_converter p)` |
+| `nnf_solver_sound` | `nnf_solver p = true -> satisfiable p` |
 
-A formula is said to be satisfiable if there exists a valuation that makes the formula true. This corresponds to the following definition in Coq:
+### Extensions implemented
 
-```coq
-Definition satisfiable (p : form) : Prop :=
-  exists V : valuation, valid V p.
-```
+- **Extension 1 (optimizer):** `optimizer` simplifies `∧`/`∨` with `⊤`/`⊥` using the identity and absorption laws. It is proved to preserve evaluation, validity and satisfiability.
+- **Extension 2 (NNF):** `nnf_converter` and `nnf_negator` are mutually recursive and push negations down to the variables, also rewriting `p → q` as `¬p ∨ q`. `nnf_solver` runs the solver on the converted formula and is proved sound.
 
-### Exercise 4
+### Tests
 
-Prove in Coq that `(x ∨ ¬y) ∧ (¬x ∨ y)` and `¬y → (x ∨ y)` are satisfiable. You should create two lemmas of the shape below, replacing *formula X* with the respective formulas in the lemma:
+The file includes `Example`s checked by `reflexivity`. They cover variable extraction, permutation generation, evaluation, and positive and negative solver cases such as `x ∨ ¬x` (satisfiable) and `¬x ∧ x` (unsatisfiable).
 
-```coq
-Lemma testX : satisfiable (* formula X *) .
-```
+## Limitations
 
-### Exercise 5
-
-Define a function `find_valuation` that, given a formula `p`, computes a valuation in which `p` is true. You should implement this function by enumerating all possible valuations, i.e., you should generate the formula's truth table and check if there is a row whose outcome is 1. The function `find_valuation` should yield `None` in case no such valuation exists.
-
-```coq
-Definition find_valuation (p : form) : option valuation :=
-(* fill in *) .
-```
-
-We now define our SAT solver as follows:
-
-```coq
-Definition solver (p : form) : bool :=
-  match find_valuation p with
-  | Some _ => true
-  | None   => false
-  end.
-```
-
-### Exercise 6
-
-Explain the difference between `satisfiable` and `solver`.
-
-### Exercise 7
-
-Write 2 positive and 2 negative tests of the solver and prove these through proof by simplification via the `reflexivity` tactic.
-
-### Exercise 8
-
-Prove that `solver` is sound. That means:
-
-```coq
-Theorem solver_sound p :
-  solver p = true -> satisfiable p.
-```
-
-You might want to state a helper lemma first, which you should prove by varying the induction hypothesis.
-
-### Exercise 9
-
-Implement one of the extensions below.
-
-## Extensions
-
-Choose one of the extensions below.
-
-### Extension 1 (easy)
-
-Write an optimizer that simplifies a Boolean formula using the laws below, and prove correctness of your optimizer.
-
-- `x ∧ ⊤ = x`
-- `⊤ ∧ x = x`
-- `x ∧ ⊥ = ⊥`
-- `⊥ ∧ x = ⊥`
-- `x ∨ ⊤ = ⊤`
-- `⊤ ∨ x = ⊤`
-- `x ∨ ⊥ = x`
-- `⊥ ∨ x = x`
-
-### Extension 2 (moderate)
-
-Write a converter that transforms Boolean formulas into negation normal form and formulate and prove correctness of your converter. A Boolean formula is in *negation normal form* if the negation operator `¬` is only applied to variables. You should incorporate your converter into the solver and its correctness proof, that is, prove `nnf_solver p = true -> satisfiable p` for an adequately defined `nnf_solver`.
-
-### Extension 3 (difficult)
-
-Prove completeness of your solver. That means:
-
-```coq
-Lemma solver_complete p :
-  satisfiable p -> solver p = true.
-```
-
-### Extension 4 (very difficult)
-
-Implement a more efficient SAT solver, like one based on the Davis-Putnam-Logemann-Loveland (DPLL) algorithm, and prove its correctness (that is, soundness).
-
+- Exponential time: the solver enumerates all 2ⁿ assignments.
+- Soundness only. Completeness (`satisfiable p -> solver p = true`) is not proved.
